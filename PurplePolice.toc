@@ -1,0 +1,8 @@
+## Interface: 120000
+## Title: PurplePolice
+## Notes: Shows enchant rank icons on enchantable gear in the character screen
+## Author: You
+## Version: 1.0.0
+## SavedVariables: PurplePoliceDB
+
+PurplePolice.lua
