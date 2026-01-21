@@ -3,6 +3,6 @@ package-as: PurplePolice
 enable-nolib-creation: no
 
 ignore:
-  - .github
   - .gitignore
   - README.md
+  - .pkgmeta
