@@ -138,9 +138,9 @@ end
 
 -- Create a text label for showing enchant name
 local function CreateEnchantTextLabel(slotFrame, slotID)
-    local label = slotFrame:CreateFontString("AmIEnchantedText" .. slotID, "OVERLAY", "GameFontNormalSmall")
+    local label = slotFrame:CreateFontString("AmIEnchantedText" .. slotID, "OVERLAY", "GameFontNormal")
     label:SetTextColor(0, 1, 0, 1) -- Green text
-    label:SetShadowOffset(1, -1)
+    label:SetShadowOffset(2, -2)
     label:SetShadowColor(0, 0, 0, 1)
     
     -- Position based on slot type (labels inside the character screen)
@@ -646,55 +646,21 @@ end
 local function CreateToggleButton()
     if toggleButton then return end
     
-    toggleButton = CreateFrame("Button", "AmIEnchantedToggleButton", CharacterFrame)
-    toggleButton:SetSize(18, 18)
+    toggleButton = CreateFrame("Button", "AmIEnchantedToggleButton", CharacterFrame, "UIPanelButtonTemplate")
+    toggleButton:SetSize(28, 20)
     
     -- Position in the title bar, to the right of the Class/Spec icon
     toggleButton:SetPoint("TOPLEFT", CharacterFrame, "TOPLEFT", 60, -3)
     toggleButton:SetFrameStrata("HIGH")
     
-    -- Create the icon texture
+    -- Remove the default text
+    toggleButton:SetText("")
+    
+    -- Create the quality tier icon (similar to rank 3 enchant icon)
     toggleButton.icon = toggleButton:CreateTexture(nil, "ARTWORK")
-    toggleButton.icon:SetAllPoints(toggleButton)
-    toggleButton.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92) -- Trim icon edges
-    
-    -- Highlight on mouseover
-    toggleButton.highlight = toggleButton:CreateTexture(nil, "HIGHLIGHT")
-    toggleButton.highlight:SetAllPoints(toggleButton)
-    toggleButton.highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
-    toggleButton.highlight:SetBlendMode("ADD")
-    toggleButton.highlight:SetAlpha(0.4)
-    
-    -- Update icon based on state
-    local function UpdateIcon()
-        if showEnchantInfo then
-            -- ON: Glowing enchanting rod icon
-            toggleButton.icon:SetTexture("Interface\\Icons\\Trade_Engraving")
-            toggleButton.icon:SetDesaturated(false)
-            toggleButton.icon:SetAlpha(1.0)
-        else
-            -- OFF: Greyed out disenchant icon
-            toggleButton.icon:SetTexture("Interface\\Icons\\INV_Enchant_Disenchant")
-            toggleButton.icon:SetDesaturated(true)
-            toggleButton.icon:SetAlpha(0.5)
-        end
-    end
-    
-    -- Set initial state
-    UpdateIcon()
-    
-    -- Handle clicks
-    toggleButton:SetScript("OnClick", function(self)
-        showEnchantInfo = not showEnchantInfo
-        UpdateIcon()
-        if showEnchantInfo then
-            UpdateEnchantIcons()
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        else
-            HideAllEnchantUI()
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-        end
-    end)
+    toggleButton.icon:SetSize(14, 14)
+    toggleButton.icon:SetPoint("CENTER", toggleButton, "CENTER", 0, 0)
+    toggleButton.icon:SetAtlas("Professions-Icon-Quality-Tier3-Small") -- Gold quality pip
     
     -- Tooltip
     toggleButton:SetScript("OnEnter", function(self)
@@ -710,6 +676,18 @@ local function CreateToggleButton()
     
     toggleButton:SetScript("OnLeave", function(self)
         GameTooltip:Hide()
+    end)
+    
+    -- Handle clicks
+    toggleButton:SetScript("OnClick", function(self)
+        showEnchantInfo = not showEnchantInfo
+        if showEnchantInfo then
+            UpdateEnchantIcons()
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        else
+            HideAllEnchantUI()
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
+        end
     end)
 end
 
