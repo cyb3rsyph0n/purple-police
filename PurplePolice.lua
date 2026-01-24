@@ -1,4 +1,4 @@
--- AmIEnchanted: Shows enchant rank icons on enchantable gear
+-- PurplePolice: Shows enchant status and rank icons on enchantable gear
 local addonName, addon = ...
 
 -- Enchantable slot IDs and their corresponding frame names
@@ -43,43 +43,92 @@ local enchantTextLabels = {}
 local enchantSideIndicators = {} -- Green/red side indicators for enchant status
 local socketIndicators = {} -- Store socket indicator frames per slot
 local toggleButton = nil
-local showEnchantText = false -- Default to hidden (will be loaded from SavedVariables)
+
+-- Default options
+local defaults = {
+    showEnchantText = false,           -- Show enchant name text (hidden by default)
+    showSideIndicators = true,         -- Show green/red side indicators
+    showQualityIcons = true,           -- Show quality tier icons
+    showSocketIndicators = true,       -- Show socket indicators
+    showMissingEnchantText = false,    -- Show "Missing Enchant" text when missing (hidden by default)
+    sideIndicatorPosition = "outside", -- "inside" or "outside" of character frame
+    textPosition = "inside",           -- "inside" or "outside" of character frame
+}
+
+-- Current options (will be loaded from SavedVariables)
+local options = {}
 
 -- Create a side indicator (colored bar on one side of the slot)
 local function CreateEnchantSideIndicator(slotFrame, slotID)
     local indicator = CreateFrame("Frame", "AmIEnchantedSideIndicator" .. slotID, slotFrame)
     indicator:SetFrameStrata("HIGH")
-    
-    -- Determine which side to show the indicator based on slot position
-    -- Left side slots show indicator on the right, right side slots show on the left
-    local isLeftSideSlot = (slotID == 9 or slotID == 5 or slotID == 15) -- Wrist, Chest, Cloak
-    local isBottomSlot = (slotID == 16 or slotID == 17) -- Weapons
-    local isRightSideSlot = (slotID == 7 or slotID == 8 or slotID == 11 or slotID == 12) -- Legs, Feet, Rings
-    
     indicator:SetSize(4, slotFrame:GetHeight() - 4)
-    
-    if isLeftSideSlot then
-        indicator:SetPoint("LEFT", slotFrame, "LEFT", 2, 0)
-    elseif isRightSideSlot then
-        indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
-    elseif isBottomSlot then
-        -- For weapons, main hand on left, off hand on right
-        if slotID == 16 then -- Main hand
-            indicator:SetPoint("LEFT", slotFrame, "LEFT", 2, 0)
-        else -- Off hand
-            indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
-        end
-    else
-        indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
-    end
     
     -- Create the colored texture
     indicator.texture = indicator:CreateTexture(nil, "OVERLAY")
     indicator.texture:SetAllPoints(indicator)
     indicator.texture:SetColorTexture(0, 1, 0, 0.8) -- Default green
     
+    -- Store slotID for repositioning
+    indicator.slotID = slotID
+    
     indicator:Hide()
     return indicator
+end
+
+-- Update side indicator position based on options
+local function UpdateSideIndicatorPosition(indicator, slotFrame, slotID)
+    indicator:ClearAllPoints()
+    
+    -- Determine which side to show the indicator based on slot position and option
+    -- "inside" = towards center of character frame (but outside the slot)
+    -- "outside" = away from center of character frame (but outside the slot)
+    local isLeftSideSlot = (slotID == 9 or slotID == 5 or slotID == 15) -- Wrist, Chest, Cloak
+    local isBottomSlot = (slotID == 16 or slotID == 17) -- Weapons
+    local isRightSideSlot = (slotID == 7 or slotID == 8 or slotID == 11 or slotID == 12) -- Legs, Feet, Rings
+    
+    local positionInside = (options.sideIndicatorPosition == "inside")
+    
+    if isLeftSideSlot then
+        -- Left side of character frame
+        if positionInside then
+            -- Inside = right side of slot (towards character center)
+            indicator:SetPoint("LEFT", slotFrame, "RIGHT", 2, 0)
+        else
+            -- Outside = left side of slot (away from character)
+            indicator:SetPoint("RIGHT", slotFrame, "LEFT", -2, 0)
+        end
+    elseif isRightSideSlot then
+        -- Right side of character frame
+        if positionInside then
+            -- Inside = left side of slot (towards character center)
+            indicator:SetPoint("RIGHT", slotFrame, "LEFT", -2, 0)
+        else
+            -- Outside = right side of slot (away from character)
+            indicator:SetPoint("LEFT", slotFrame, "RIGHT", 2, 0)
+        end
+    elseif isBottomSlot then
+        -- Weapons at bottom
+        if slotID == 16 then -- Main hand (left weapon)
+            if positionInside then
+                -- Inside = right side of slot (towards character center)
+                indicator:SetPoint("LEFT", slotFrame, "RIGHT", 2, 0)
+            else
+                -- Outside = left side of slot (away from character)
+                indicator:SetPoint("RIGHT", slotFrame, "LEFT", -2, 0)
+            end
+        else -- Off hand (right weapon)
+            if positionInside then
+                -- Inside = left side of slot (towards character center)
+                indicator:SetPoint("RIGHT", slotFrame, "LEFT", -2, 0)
+            else
+                -- Outside = right side of slot (away from character)
+                indicator:SetPoint("LEFT", slotFrame, "RIGHT", 2, 0)
+            end
+        end
+    else
+        indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
+    end
 end
 
 -- Create a red border frame to highlight unenchanted gear (kept for compatibility but may not be used)
@@ -180,33 +229,65 @@ local function CreateEnchantTextLabel(slotFrame, slotID)
     label:SetTextColor(0, 1, 0, 1) -- Green text
     label:SetShadowOffset(2, -2)
     label:SetShadowColor(0, 0, 0, 1)
-    
-    -- Position based on slot type (labels inside the character screen)
-    if slotID == 16 then
-        -- Main hand weapon - bottom, text to the left, aligned right
-        label:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMLEFT", -4, 0)
-        label:SetJustifyH("RIGHT")
-    elseif slotID == 17 then
-        -- Off hand - bottom, text to the right, aligned left
-        label:SetPoint("BOTTOMLEFT", slotFrame, "BOTTOMRIGHT", 4, 0)
-        label:SetJustifyH("LEFT")
-    elseif slotID == 9 or slotID == 5 or slotID == 15 then
-        -- Wrist, Chest, Cloak (left side slots) - text to the right (inside), centered vertically
-        label:SetPoint("LEFT", slotFrame, "RIGHT", 4, 0)
-        label:SetJustifyH("LEFT")
-    elseif slotID == 11 or slotID == 12 then
-        -- Rings (right side slots) - text to the left (inside), centered vertically
-        label:SetPoint("RIGHT", slotFrame, "LEFT", -4, 0)
-        label:SetJustifyH("RIGHT")
-    else
-        -- Legs, Feet (bottom slots) - text to the left (inside), centered vertically
-        label:SetPoint("RIGHT", slotFrame, "LEFT", -4, 0)
-        label:SetJustifyH("RIGHT")
-    end
-    
+    label.slotID = slotID -- Store for repositioning
     label:SetWidth(120) -- Max width to prevent overflow
     label:Hide()
     return label
+end
+
+-- Update text label position based on options
+local function UpdateTextLabelPosition(label, slotFrame, slotID)
+    label:ClearAllPoints()
+    
+    local positionInside = (options.textPosition == "inside")
+    
+    -- Position based on slot type
+    if slotID == 16 then
+        -- Main hand weapon - text to the LEFT of the slot
+        if positionInside then
+            label:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMLEFT", -4, 0)
+            label:SetJustifyH("RIGHT")
+        else
+            label:SetPoint("BOTTOMLEFT", slotFrame, "BOTTOMRIGHT", 4, 0)
+            label:SetJustifyH("LEFT")
+        end
+    elseif slotID == 17 then
+        -- Off hand - text to the RIGHT of the slot
+        if positionInside then
+            label:SetPoint("BOTTOMLEFT", slotFrame, "BOTTOMRIGHT", 4, 0)
+            label:SetJustifyH("LEFT")
+        else
+            label:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMLEFT", -4, 0)
+            label:SetJustifyH("RIGHT")
+        end
+    elseif slotID == 9 or slotID == 5 or slotID == 15 then
+        -- Wrist, Chest, Cloak (left side slots)
+        if positionInside then
+            label:SetPoint("LEFT", slotFrame, "RIGHT", 4, 0)
+            label:SetJustifyH("LEFT")
+        else
+            label:SetPoint("RIGHT", slotFrame, "LEFT", -4, 0)
+            label:SetJustifyH("RIGHT")
+        end
+    elseif slotID == 11 or slotID == 12 then
+        -- Rings (right side slots)
+        if positionInside then
+            label:SetPoint("RIGHT", slotFrame, "LEFT", -4, 0)
+            label:SetJustifyH("RIGHT")
+        else
+            label:SetPoint("LEFT", slotFrame, "RIGHT", 4, 0)
+            label:SetJustifyH("LEFT")
+        end
+    else
+        -- Legs, Feet (bottom slots)
+        if positionInside then
+            label:SetPoint("RIGHT", slotFrame, "LEFT", -4, 0)
+            label:SetJustifyH("RIGHT")
+        else
+            label:SetPoint("LEFT", slotFrame, "RIGHT", 4, 0)
+            label:SetJustifyH("LEFT")
+        end
+    end
 end
 
 -- Create a single socket indicator (black square with red border when missing)
@@ -231,21 +312,40 @@ local function CreateSocketIndicators(slotFrame, slotID, maxSockets)
     for i = 1, maxSockets do
         local indicator = CreateSocketIndicator(slotFrame, i)
         indicator:SetFrameStrata("HIGH")
-        
-        -- Check if this is a left-side slot with a side indicator (bracers)
-        local isLeftSideSlot = (slotID == 9) -- Wrist/Bracers
-        local xOffset = isLeftSideSlot and 8 or 2 -- Move right for left-side slots
-        
-        -- Position indicators at the top of the slot, side by side
-        if i == 1 then
-            indicator:SetPoint("TOPLEFT", slotFrame, "TOPLEFT", xOffset, -2)
-        else
-            indicator:SetPoint("LEFT", indicators[i-1], "RIGHT", 2, 0)
-        end
-        
+        indicator.slotID = slotID -- Store for repositioning
+        indicator.index = i
         indicators[i] = indicator
     end
     return indicators
+end
+
+-- Update socket indicator positions based on current options
+local function UpdateSocketIndicatorPositions(indicators, slotFrame, slotID)
+    if not indicators or #indicators == 0 then return end
+    
+    -- Check if this is a right-side slot (rings, belt)
+    local isRightSideSlot = (slotID == 11 or slotID == 12 or slotID == 6) -- Ring 1, Ring 2, Belt
+    
+    -- Position indicators at the top of the slot, side by side
+    -- Socket indicators are inside the icon, side indicators are on the edge
+    for i, indicator in ipairs(indicators) do
+        indicator:ClearAllPoints()
+        if isRightSideSlot then
+            -- Right side slots - position from top-right, going left
+            if i == 1 then
+                indicator:SetPoint("TOPRIGHT", slotFrame, "TOPRIGHT", -2, -2)
+            else
+                indicator:SetPoint("RIGHT", indicators[i-1], "LEFT", -2, 0)
+            end
+        else
+            -- Left side and center slots - position from top-left, going right
+            if i == 1 then
+                indicator:SetPoint("TOPLEFT", slotFrame, "TOPLEFT", 2, -2)
+            else
+                indicator:SetPoint("LEFT", indicators[i-1], "RIGHT", 2, 0)
+            end
+        end
+    end
 end
 
 -- Check socket status for an item
@@ -321,16 +421,9 @@ local function CreateEnchantIcon(slotFrame, slotID)
     icon:SetSize(14, 14)
     icon:SetFrameStrata("HIGH")
     
-    -- Position icon accounting for side indicators on right-side slots
-    local isRightSideSlot = (slotID == 7 or slotID == 8 or slotID == 11 or slotID == 12) -- Legs, Feet, Rings
-    local isOffHand = (slotID == 17)
-    
-    if isRightSideSlot or isOffHand then
-        -- Move icon left to avoid overlap with right-side indicator
-        icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -7, 1)
-    else
-        icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
-    end
+    -- Position icon in the bottom-right corner of the slot
+    -- Side indicators are outside the slot, so no offset needed
+    icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
     
     -- Create the texture for the rank icon
     icon.texture = icon:CreateTexture(nil, "OVERLAY")
@@ -575,25 +668,35 @@ local function UpdateEnchantIcons()
             local itemLink = GetInventoryItemLink("player", slotID)
             
             if hasItem and isEnchantable and enchantRank then
-                -- Show the appropriate rank icon
-                local atlasName = RANK_ICONS[enchantRank]
-                if atlasName then
-                    icon.texture:SetAtlas(atlasName)
-                    icon:Show()
+                -- Show the appropriate rank icon if option enabled
+                if options.showQualityIcons then
+                    local atlasName = RANK_ICONS[enchantRank]
+                    if atlasName then
+                        icon.texture:SetAtlas(atlasName)
+                        icon:Show()
+                    else
+                        icon:Hide()
+                    end
                 else
                     icon:Hide()
                 end
                 -- Hide red border since item is enchanted
                 border:Hide()
                 
-                -- Always show green side indicator for enchanted items
-                sideIndicator.texture:SetColorTexture(0, 1, 0, 0.8) -- Green
-                sideIndicator:Show()
+                -- Show green side indicator for enchanted items if option enabled
+                if options.showSideIndicators then
+                    UpdateSideIndicatorPosition(sideIndicator, slotFrame, slotID)
+                    sideIndicator.texture:SetColorTexture(0, 1, 0, 0.8) -- Green
+                    sideIndicator:Show()
+                else
+                    sideIndicator:Hide()
+                end
                 
-                -- Show enchant name only if toggle is on
-                if showEnchantText then
+                -- Show enchant name only if option is on
+                if options.showEnchantText then
                     local enchantName = GetEnchantName(itemLink)
                     if enchantName then
+                        UpdateTextLabelPosition(textLabel, slotFrame, slotID)
                         textLabel:SetText(enchantName)
                         textLabel:SetTextColor(0, 1, 0, 1) -- Green text
                         textLabel:Show()
@@ -608,12 +711,18 @@ local function UpdateEnchantIcons()
                 icon:Hide()
                 border:Hide()
                 
-                -- Always show red side indicator for missing enchants
-                sideIndicator.texture:SetColorTexture(1, 0, 0, 0.8) -- Red
-                sideIndicator:Show()
+                -- Show red side indicator for missing enchants if option enabled
+                if options.showSideIndicators then
+                    UpdateSideIndicatorPosition(sideIndicator, slotFrame, slotID)
+                    sideIndicator.texture:SetColorTexture(1, 0, 0, 0.8) -- Red
+                    sideIndicator:Show()
+                else
+                    sideIndicator:Hide()
+                end
                 
-                -- Show "Missing Enchant" text only if toggle is on
-                if showEnchantText then
+                -- Show "Missing Enchant" text only if options are on
+                if options.showEnchantText and options.showMissingEnchantText then
+                    UpdateTextLabelPosition(textLabel, slotFrame, slotID)
                     textLabel:SetText("Missing Enchant")
                     textLabel:SetTextColor(1, 0, 0, 1) -- Red text
                     textLabel:Show()
@@ -646,42 +755,48 @@ local function UpdateEnchantIcons()
             local indicators = socketIndicators[slotID]
             local hasItem, totalSockets, filledSockets, missingGems = CheckSocketStatus(slotID)
             
+            -- Update positions based on current options
+            UpdateSocketIndicatorPositions(indicators, slotFrame, slotID)
+            
             -- Hide all indicators first
             for _, indicator in ipairs(indicators) do
                 indicator:Hide()
             end
             
-            if hasItem and totalSockets > 0 then
-                -- Show indicators for each socket that exists
-                for i = 1, totalSockets do
-                    if indicators[i] then
-                        if i <= filledSockets then
-                            -- Socket is filled - green border
-                            indicators[i]:SetBackdropColor(0.1, 0.3, 0.1, 0.9)
-                            indicators[i]:SetBackdropBorderColor(0, 1, 0, 1)
-                        else
-                            -- Socket is empty - black with red border
+            -- Only show socket indicators if option is enabled
+            if options.showSocketIndicators then
+                if hasItem and totalSockets > 0 then
+                    -- Show indicators for each socket that exists
+                    for i = 1, totalSockets do
+                        if indicators[i] then
+                            if i <= filledSockets then
+                                -- Socket is filled - green border
+                                indicators[i]:SetBackdropColor(0.1, 0.3, 0.1, 0.9)
+                                indicators[i]:SetBackdropBorderColor(0, 1, 0, 1)
+                            else
+                                -- Socket is empty - black with red border
+                                indicators[i]:SetBackdropColor(0, 0, 0, 0.9)
+                                indicators[i]:SetBackdropBorderColor(1, 0, 0, 1)
+                            end
+                            indicators[i]:Show()
+                        end
+                    end
+                    -- Show red indicators for missing sockets (sockets that could be added)
+                    for i = totalSockets + 1, maxSockets do
+                        if indicators[i] then
                             indicators[i]:SetBackdropColor(0, 0, 0, 0.9)
                             indicators[i]:SetBackdropBorderColor(1, 0, 0, 1)
+                            indicators[i]:Show()
                         end
-                        indicators[i]:Show()
                     end
-                end
-                -- Show red indicators for missing sockets (sockets that could be added)
-                for i = totalSockets + 1, maxSockets do
-                    if indicators[i] then
-                        indicators[i]:SetBackdropColor(0, 0, 0, 0.9)
-                        indicators[i]:SetBackdropBorderColor(1, 0, 0, 1)
-                        indicators[i]:Show()
-                    end
-                end
-            elseif hasItem then
-                -- Item has no sockets at all - show all as missing (red)
-                for i = 1, maxSockets do
-                    if indicators[i] then
-                        indicators[i]:SetBackdropColor(0, 0, 0, 0.9)
-                        indicators[i]:SetBackdropBorderColor(1, 0, 0, 1)
-                        indicators[i]:Show()
+                elseif hasItem then
+                    -- Item has no sockets at all - show all as missing (red)
+                    for i = 1, maxSockets do
+                        if indicators[i] then
+                            indicators[i]:SetBackdropColor(0, 0, 0, 0.9)
+                            indicators[i]:SetBackdropBorderColor(1, 0, 0, 1)
+                            indicators[i]:Show()
+                        end
                     end
                 end
             end
@@ -717,15 +832,208 @@ local function HideAllEnchantUI()
     end
 end
 
--- Toggle enchant text display (side indicators always stay visible)
+-- Toggle enchant text display (side indicators controlled by options)
 local function ToggleEnchantText()
-    showEnchantText = not showEnchantText
-    if showEnchantText then
-        toggleButton:SetChecked(true)
-        UpdateEnchantIcons() -- This will show the text labels
+    options.showEnchantText = not options.showEnchantText
+    if PurplePoliceDB then
+        PurplePoliceDB.showEnchantText = options.showEnchantText
+    end
+    UpdateEnchantIcons()
+end
+
+-- Options category reference (declared here so CreateToggleButton can access it)
+local optionsCategory = nil
+
+-- Popup options panel reference
+local popupOptionsFrame = nil
+
+-- Create the quick popup options panel
+local function CreatePopupOptionsPanel()
+    if popupOptionsFrame then return popupOptionsFrame end
+    
+    local popup = CreateFrame("Frame", "PurplePolicePopupOptions", UIParent, "BackdropTemplate")
+    popup:SetSize(280, 340)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetFrameLevel(100)
+    popup:SetMovable(true)
+    popup:EnableMouse(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:SetClampedToScreen(true)
+    
+    -- Backdrop
+    popup:SetBackdrop({
+        bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background-Dark",
+        edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+        tile = true,
+        tileSize = 32,
+        edgeSize = 32,
+        insets = { left = 8, right = 8, top = 8, bottom = 8 }
+    })
+    
+    -- Title bar
+    local titleBg = popup:CreateTexture(nil, "ARTWORK")
+    titleBg:SetTexture("Interface\\DialogFrame\\UI-DialogBox-Header")
+    titleBg:SetSize(160, 64)
+    titleBg:SetPoint("TOP", popup, "TOP", 0, 12)
+    
+    local title = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    title:SetPoint("TOP", popup, "TOP", 0, -4)
+    title:SetText("Purple Police")
+    
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, popup, "UIPanelCloseButton")
+    closeBtn:SetPoint("TOPRIGHT", popup, "TOPRIGHT", -2, -2)
+    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+    
+    local yOffset = -35
+    
+    -- Helper function to create a checkbox
+    local function CreatePopupCheckbox(label, optionKey)
+        local cb = CreateFrame("CheckButton", nil, popup, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, yOffset)
+        cb:SetSize(26, 26)
+        
+        local cbLabel = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cbLabel:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+        cbLabel:SetText(label)
+        
+        cb:SetChecked(options[optionKey])
+        cb.optionKey = optionKey
+        
+        cb:SetScript("OnClick", function(self)
+            options[optionKey] = self:GetChecked()
+            if PurplePoliceDB then
+                PurplePoliceDB[optionKey] = options[optionKey]
+            end
+            if CharacterFrame and CharacterFrame:IsShown() then
+                UpdateEnchantIcons()
+            end
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end)
+        
+        yOffset = yOffset - 26
+        return cb
+    end
+    
+    -- Helper function to create a dropdown
+    local function CreatePopupDropdown(label, optionKey, dropdownOptions)
+        local labelText = popup:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        labelText:SetPoint("TOPLEFT", 16, yOffset)
+        labelText:SetText(label)
+        
+        yOffset = yOffset - 18
+        
+        local dropdown = CreateFrame("Frame", "PurplePolicePopupDropdown_" .. optionKey, popup, "UIDropDownMenuTemplate")
+        dropdown:SetPoint("TOPLEFT", -4, yOffset)
+        dropdown.optionKey = optionKey
+        dropdown.dropdownOptions = dropdownOptions
+        
+        local function GetDisplayText()
+            for _, opt in ipairs(dropdownOptions) do
+                if opt.value == options[optionKey] then
+                    return opt.text
+                end
+            end
+            return dropdownOptions[1].text
+        end
+        
+        UIDropDownMenu_SetWidth(dropdown, 150)
+        UIDropDownMenu_SetText(dropdown, GetDisplayText())
+        
+        UIDropDownMenu_Initialize(dropdown, function(self, level)
+            for _, opt in ipairs(dropdownOptions) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = opt.text
+                info.value = opt.value
+                info.checked = (options[optionKey] == opt.value)
+                info.func = function()
+                    options[optionKey] = opt.value
+                    if PurplePoliceDB then
+                        PurplePoliceDB[optionKey] = opt.value
+                    end
+                    UIDropDownMenu_SetText(dropdown, opt.text)
+                    CloseDropDownMenus()
+                    if CharacterFrame and CharacterFrame:IsShown() then
+                        UpdateEnchantIcons()
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+        
+        yOffset = yOffset - 32
+        return dropdown
+    end
+    
+    -- Display Options Header
+    local displayHeader = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    displayHeader:SetPoint("TOPLEFT", 16, yOffset)
+    displayHeader:SetText("|cffffd700Display Options|r")
+    yOffset = yOffset - 22
+    
+    -- Store checkbox references for refresh
+    popup.checkboxes = {}
+    popup.dropdowns = {}
+    
+    -- Checkboxes
+    popup.checkboxes.showEnchantText = CreatePopupCheckbox("Show Enchant Text", "showEnchantText")
+    popup.checkboxes.showSideIndicators = CreatePopupCheckbox("Show Side Indicators", "showSideIndicators")
+    popup.checkboxes.showQualityIcons = CreatePopupCheckbox("Show Quality Icons", "showQualityIcons")
+    popup.checkboxes.showSocketIndicators = CreatePopupCheckbox("Show Socket Indicators", "showSocketIndicators")
+    popup.checkboxes.showMissingEnchantText = CreatePopupCheckbox("Show 'Missing Enchant' Text", "showMissingEnchantText")
+    
+    yOffset = yOffset - 10
+    
+    -- Position Options Header
+    local positionHeader = popup:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    positionHeader:SetPoint("TOPLEFT", 16, yOffset)
+    positionHeader:SetText("|cffffd700Position Options|r")
+    yOffset = yOffset - 22
+    
+    local positionOptions = {
+        { text = "Inside Character", value = "inside" },
+        { text = "Outside Character", value = "outside" },
+    }
+    
+    popup.dropdowns.sideIndicatorPosition = CreatePopupDropdown("Side Indicator Position:", "sideIndicatorPosition", positionOptions)
+    popup.dropdowns.textPosition = CreatePopupDropdown("Text Position:", "textPosition", positionOptions)
+    
+    -- Refresh function to update UI from current options
+    popup.Refresh = function(self)
+        for key, cb in pairs(self.checkboxes) do
+            cb:SetChecked(options[key])
+        end
+        for key, dd in pairs(self.dropdowns) do
+            for _, opt in ipairs(dd.dropdownOptions) do
+                if opt.value == options[key] then
+                    UIDropDownMenu_SetText(dd, opt.text)
+                    break
+                end
+            end
+        end
+    end
+    
+    popup:Hide()
+    popupOptionsFrame = popup
+    return popup
+end
+
+-- Toggle the popup options panel
+local function TogglePopupOptions()
+    if not popupOptionsFrame then
+        CreatePopupOptionsPanel()
+    end
+    
+    if popupOptionsFrame:IsShown() then
+        popupOptionsFrame:Hide()
     else
-        toggleButton:SetChecked(false)
-        HideAllEnchantText() -- Only hide the text, keep side indicators
+        -- Position to the right of the character frame
+        popupOptionsFrame:ClearAllPoints()
+        popupOptionsFrame:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", 5, 0)
+        popupOptionsFrame:Refresh()
+        popupOptionsFrame:Show()
     end
 end
 
@@ -733,7 +1041,7 @@ end
 local function CreateToggleButton()
     if toggleButton then return end
     
-    toggleButton = CreateFrame("Button", "AmIEnchantedToggleButton", CharacterFrame, "UIPanelButtonTemplate")
+    toggleButton = CreateFrame("Button", "PurplePoliceToggleButton", CharacterFrame, "UIPanelButtonTemplate")
     toggleButton:SetSize(28, 20)
     
     -- Position in the title bar, to the right of the Class/Spec icon
@@ -753,12 +1061,7 @@ local function CreateToggleButton()
     toggleButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
         GameTooltip:SetText("Purple Police")
-        if showEnchantText then
-            GameTooltip:AddLine("Click to hide enchant details", 0.8, 0.8, 0.8)
-        else
-            GameTooltip:AddLine("Click to show enchant details", 0.8, 0.8, 0.8)
-        end
-        GameTooltip:AddLine("Green/Red indicators always visible", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine("Click to toggle options", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     
@@ -766,21 +1069,164 @@ local function CreateToggleButton()
         GameTooltip:Hide()
     end)
     
-    -- Handle clicks
-    toggleButton:SetScript("OnClick", function(self)
-        showEnchantText = not showEnchantText
-        -- Save to SavedVariables
-        if PurplePoliceDB then
-            PurplePoliceDB.showEnchantText = showEnchantText
-        end
-        if showEnchantText then
-            UpdateEnchantIcons()
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-        else
-            HideAllEnchantText()
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
-        end
+    -- Handle clicks - toggle popup options panel
+    toggleButton:SetScript("OnClick", function(self, button)
+        TogglePopupOptions()
     end)
+end
+
+-- Create the options panel
+local function CreateOptionsPanel()
+    -- Create the main options frame
+    local optionsFrame = CreateFrame("Frame", "PurplePoliceOptionsPanel", UIParent)
+    optionsFrame:SetSize(400, 500)
+    
+    -- Title
+    local title = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -16)
+    title:SetText("Purple Police Options")
+    
+    -- Description
+    local desc = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
+    desc:SetText("Configure what enchant information is displayed on your character panel.")
+    
+    local yOffset = -70
+    
+    -- Helper function to create a checkbox
+    local function CreateCheckbox(parent, label, tooltipText, optionKey)
+        local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", 16, yOffset)
+        cb:SetSize(26, 26)
+        
+        local cbLabel = cb:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        cbLabel:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+        cbLabel:SetText(label)
+        
+        cb:SetChecked(options[optionKey])
+        
+        cb:SetScript("OnClick", function(self)
+            options[optionKey] = self:GetChecked()
+            if PurplePoliceDB then
+                PurplePoliceDB[optionKey] = options[optionKey]
+            end
+            if CharacterFrame and CharacterFrame:IsShown() then
+                UpdateEnchantIcons()
+            end
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        end)
+        
+        cb:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(label, 1, 1, 1)
+            GameTooltip:AddLine(tooltipText, nil, nil, nil, true)
+            GameTooltip:Show()
+        end)
+        
+        cb:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+        end)
+        
+        yOffset = yOffset - 30
+        return cb
+    end
+    
+    -- Helper function to create a dropdown
+    local function CreateDropdown(parent, label, tooltipText, optionKey, dropdownOptions)
+        local labelText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        labelText:SetPoint("TOPLEFT", 16, yOffset)
+        labelText:SetText(label)
+        
+        yOffset = yOffset - 20
+        
+        local dropdown = CreateFrame("Frame", "PurplePoliceDropdown_" .. optionKey, parent, "UIDropDownMenuTemplate")
+        dropdown:SetPoint("TOPLEFT", 0, yOffset)
+        
+        local function GetDisplayText()
+            for _, opt in ipairs(dropdownOptions) do
+                if opt.value == options[optionKey] then
+                    return opt.text
+                end
+            end
+            return dropdownOptions[1].text
+        end
+        
+        UIDropDownMenu_SetWidth(dropdown, 150)
+        UIDropDownMenu_SetText(dropdown, GetDisplayText())
+        
+        UIDropDownMenu_Initialize(dropdown, function(self, level)
+            for _, opt in ipairs(dropdownOptions) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = opt.text
+                info.value = opt.value
+                info.checked = (options[optionKey] == opt.value)
+                info.func = function()
+                    options[optionKey] = opt.value
+                    if PurplePoliceDB then
+                        PurplePoliceDB[optionKey] = opt.value
+                    end
+                    UIDropDownMenu_SetText(dropdown, opt.text)
+                    CloseDropDownMenus()
+                    if CharacterFrame and CharacterFrame:IsShown() then
+                        UpdateEnchantIcons()
+                    end
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end)
+        
+        yOffset = yOffset - 40
+        return dropdown
+    end
+    
+    -- Display Options Header
+    local displayHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    displayHeader:SetPoint("TOPLEFT", 16, yOffset)
+    displayHeader:SetText("|cffffd700Display Options|r")
+    yOffset = yOffset - 25
+    
+    -- Checkboxes for what to display
+    CreateCheckbox(optionsFrame, "Show Enchant Text", 
+        "Display the enchant name next to equipment slots", "showEnchantText")
+    
+    CreateCheckbox(optionsFrame, "Show Side Indicators",
+        "Display green/red bars on equipment slots to indicate enchant status", "showSideIndicators")
+    
+    CreateCheckbox(optionsFrame, "Show Quality Icons",
+        "Display the crafting quality tier icons (bronze/silver/gold) on enchanted items", "showQualityIcons")
+    
+    CreateCheckbox(optionsFrame, "Show Socket Indicators",
+        "Display socket status indicators on socketable equipment", "showSocketIndicators")
+    
+    CreateCheckbox(optionsFrame, "Show 'Missing Enchant' Text",
+        "Display 'Missing Enchant' text on items that need enchants (requires Show Enchant Text)", "showMissingEnchantText")
+    
+    yOffset = yOffset - 15
+    
+    -- Position Options Header
+    local positionHeader = optionsFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    positionHeader:SetPoint("TOPLEFT", 16, yOffset)
+    positionHeader:SetText("|cffffd700Position Options|r")
+    yOffset = yOffset - 25
+    
+    local positionOptions = {
+        { text = "Inside Character", value = "inside" },
+        { text = "Outside Character", value = "outside" },
+    }
+    
+    -- Side Indicator Position dropdown
+    CreateDropdown(optionsFrame, "Side Indicator Position:", 
+        "Where to display the green/red side indicators", "sideIndicatorPosition", positionOptions)
+    
+    -- Text Position dropdown
+    CreateDropdown(optionsFrame, "Text Position:",
+        "Where to display the enchant name text", "textPosition", positionOptions)
+    
+    -- Register with the new Settings API
+    optionsCategory = Settings.RegisterCanvasLayoutCategory(optionsFrame, "Purple Police")
+    Settings.RegisterAddOnCategory(optionsCategory)
+    
+    return optionsFrame
 end
 
 -- Create the main frame for event handling
@@ -795,14 +1241,20 @@ frame:SetScript("OnEvent", function(self, event, ...)
         if PurplePoliceDB == nil then
             PurplePoliceDB = {}
         end
-        -- Load saved setting, default to false (hidden) if not set
-        if PurplePoliceDB.showEnchantText == nil then
-            PurplePoliceDB.showEnchantText = false
+        
+        -- Load saved settings with defaults
+        for key, defaultValue in pairs(defaults) do
+            if PurplePoliceDB[key] == nil then
+                PurplePoliceDB[key] = defaultValue
+            end
+            options[key] = PurplePoliceDB[key]
         end
-        showEnchantText = PurplePoliceDB.showEnchantText
         
         -- Create the toggle button
         CreateToggleButton()
+        
+        -- Create the options panel
+        CreateOptionsPanel()
         
         -- Hook into the character frame
         if CharacterFrame then
@@ -818,23 +1270,10 @@ frame:SetScript("OnEvent", function(self, event, ...)
             end)
         end
         
-        print("|cff00ff00Am I Enchanted?|r loaded! Open your character screen to see enchant ranks.")
+        print("|cff9932ccPurple Police|r loaded! Open your character screen to see enchant status. Right-click the button for options.")
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
         -- Delay slightly to ensure item data is available
         -- Always update since side indicators are always shown
         C_Timer.After(0.1, UpdateEnchantIcons)
     end
 end)
-
--- Slash command for manual refresh
-SLASH_AMIENCHANTED1 = "/amienchanted"
-SLASH_AMIENCHANTED2 = "/aie"
-SlashCmdList["AMIENCHANTED"] = function(msg)
-    if msg == "refresh" then
-        UpdateEnchantIcons()
-        print("|cff00ff00Am I Enchanted?|r Icons refreshed!")
-    else
-        print("|cff00ff00Am I Enchanted?|r Commands:")
-        print("  /aie refresh - Refresh enchant icons")
-    end
-end
