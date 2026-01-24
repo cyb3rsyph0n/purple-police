@@ -40,11 +40,49 @@ local RANK_ICONS = {
 local enchantIcons = {}
 local unenchantedBorders = {}
 local enchantTextLabels = {}
+local enchantSideIndicators = {} -- Green/red side indicators for enchant status
 local socketIndicators = {} -- Store socket indicator frames per slot
 local toggleButton = nil
-local showEnchantInfo = true -- Default to showing enchant info
+local showEnchantText = false -- Default to hidden (will be loaded from SavedVariables)
 
--- Create a red border frame to highlight unenchanted gear
+-- Create a side indicator (colored bar on one side of the slot)
+local function CreateEnchantSideIndicator(slotFrame, slotID)
+    local indicator = CreateFrame("Frame", "AmIEnchantedSideIndicator" .. slotID, slotFrame)
+    indicator:SetFrameStrata("HIGH")
+    
+    -- Determine which side to show the indicator based on slot position
+    -- Left side slots show indicator on the right, right side slots show on the left
+    local isLeftSideSlot = (slotID == 9 or slotID == 5 or slotID == 15) -- Wrist, Chest, Cloak
+    local isBottomSlot = (slotID == 16 or slotID == 17) -- Weapons
+    local isRightSideSlot = (slotID == 7 or slotID == 8 or slotID == 11 or slotID == 12) -- Legs, Feet, Rings
+    
+    indicator:SetSize(4, slotFrame:GetHeight() - 4)
+    
+    if isLeftSideSlot then
+        indicator:SetPoint("LEFT", slotFrame, "LEFT", 2, 0)
+    elseif isRightSideSlot then
+        indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
+    elseif isBottomSlot then
+        -- For weapons, main hand on left, off hand on right
+        if slotID == 16 then -- Main hand
+            indicator:SetPoint("LEFT", slotFrame, "LEFT", 2, 0)
+        else -- Off hand
+            indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
+        end
+    else
+        indicator:SetPoint("RIGHT", slotFrame, "RIGHT", -2, 0)
+    end
+    
+    -- Create the colored texture
+    indicator.texture = indicator:CreateTexture(nil, "OVERLAY")
+    indicator.texture:SetAllPoints(indicator)
+    indicator.texture:SetColorTexture(0, 1, 0, 0.8) -- Default green
+    
+    indicator:Hide()
+    return indicator
+end
+
+-- Create a red border frame to highlight unenchanted gear (kept for compatibility but may not be used)
 local function CreateUnenchantedBorder(slotFrame, slotID)
     local border = CreateFrame("Frame", "AmIEnchantedBorder" .. slotID, slotFrame, "BackdropTemplate")
     border:SetSize(slotFrame:GetWidth() + 4, slotFrame:GetHeight() + 4)
@@ -194,9 +232,13 @@ local function CreateSocketIndicators(slotFrame, slotID, maxSockets)
         local indicator = CreateSocketIndicator(slotFrame, i)
         indicator:SetFrameStrata("HIGH")
         
+        -- Check if this is a left-side slot with a side indicator (bracers)
+        local isLeftSideSlot = (slotID == 9) -- Wrist/Bracers
+        local xOffset = isLeftSideSlot and 8 or 2 -- Move right for left-side slots
+        
         -- Position indicators at the top of the slot, side by side
         if i == 1 then
-            indicator:SetPoint("TOPLEFT", slotFrame, "TOPLEFT", 2, -2)
+            indicator:SetPoint("TOPLEFT", slotFrame, "TOPLEFT", xOffset, -2)
         else
             indicator:SetPoint("LEFT", indicators[i-1], "RIGHT", 2, 0)
         end
@@ -277,8 +319,18 @@ end
 local function CreateEnchantIcon(slotFrame, slotID)
     local icon = CreateFrame("Frame", "AmIEnchantedIcon" .. slotID, slotFrame)
     icon:SetSize(14, 14)
-    icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
     icon:SetFrameStrata("HIGH")
+    
+    -- Position icon accounting for side indicators on right-side slots
+    local isRightSideSlot = (slotID == 7 or slotID == 8 or slotID == 11 or slotID == 12) -- Legs, Feet, Rings
+    local isOffHand = (slotID == 17)
+    
+    if isRightSideSlot or isOffHand then
+        -- Move icon left to avoid overlap with right-side indicator
+        icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -7, 1)
+    else
+        icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
+    end
     
     -- Create the texture for the rank icon
     icon.texture = icon:CreateTexture(nil, "OVERLAY")
@@ -513,6 +565,12 @@ local function UpdateEnchantIcons()
             end
             local textLabel = enchantTextLabels[slotID]
             
+            -- Create side indicator if it doesn't exist
+            if not enchantSideIndicators[slotID] then
+                enchantSideIndicators[slotID] = CreateEnchantSideIndicator(slotFrame, slotID)
+            end
+            local sideIndicator = enchantSideIndicators[slotID]
+            
             -- Get item link for enchant name
             local itemLink = GetInventoryItemLink("player", slotID)
             
@@ -528,26 +586,45 @@ local function UpdateEnchantIcons()
                 -- Hide red border since item is enchanted
                 border:Hide()
                 
-                -- Show enchant name
-                local enchantName = GetEnchantName(itemLink)
-                if enchantName then
-                    textLabel:SetText(enchantName)
-                    textLabel:SetTextColor(0, 1, 0, 1) -- Green text
-                    textLabel:Show()
+                -- Always show green side indicator for enchanted items
+                sideIndicator.texture:SetColorTexture(0, 1, 0, 0.8) -- Green
+                sideIndicator:Show()
+                
+                -- Show enchant name only if toggle is on
+                if showEnchantText then
+                    local enchantName = GetEnchantName(itemLink)
+                    if enchantName then
+                        textLabel:SetText(enchantName)
+                        textLabel:SetTextColor(0, 1, 0, 1) -- Green text
+                        textLabel:Show()
+                    else
+                        textLabel:Hide()
+                    end
                 else
                     textLabel:Hide()
                 end
             elseif hasItem and isEnchantable then
-                -- Item exists and CAN be enchanted but has no enchant - show red border and red label
+                -- Item exists and CAN be enchanted but has no enchant - show red side indicator
                 icon:Hide()
-                border:Show()
-                textLabel:SetText("Missing Enchant")
-                textLabel:SetTextColor(1, 0, 0, 1) -- Red text
-                textLabel:Show()
+                border:Hide()
+                
+                -- Always show red side indicator for missing enchants
+                sideIndicator.texture:SetColorTexture(1, 0, 0, 0.8) -- Red
+                sideIndicator:Show()
+                
+                -- Show "Missing Enchant" text only if toggle is on
+                if showEnchantText then
+                    textLabel:SetText("Missing Enchant")
+                    textLabel:SetTextColor(1, 0, 0, 1) -- Red text
+                    textLabel:Show()
+                else
+                    textLabel:Hide()
+                end
             else
                 -- No item in slot OR item is not enchantable (shields, off-hands, etc.)
                 icon:Hide()
                 border:Hide()
+                sideIndicator:Hide()
                 textLabel:Hide()
             end
         end
@@ -612,7 +689,14 @@ local function UpdateEnchantIcons()
     end
 end
 
--- Hide all enchant UI elements
+-- Hide all enchant UI elements (now only hides text, keeps side indicators visible)
+local function HideAllEnchantText()
+    for slotID, label in pairs(enchantTextLabels) do
+        label:Hide()
+    end
+end
+
+-- Hide everything (used when character frame is closed)
 local function HideAllEnchantUI()
     for slotID, icon in pairs(enchantIcons) do
         icon:Hide()
@@ -623,6 +707,9 @@ local function HideAllEnchantUI()
     for slotID, label in pairs(enchantTextLabels) do
         label:Hide()
     end
+    for slotID, indicator in pairs(enchantSideIndicators) do
+        indicator:Hide()
+    end
     for slotID, indicators in pairs(socketIndicators) do
         for _, indicator in ipairs(indicators) do
             indicator:Hide()
@@ -630,15 +717,15 @@ local function HideAllEnchantUI()
     end
 end
 
--- Toggle enchant info display
-local function ToggleEnchantInfo()
-    showEnchantInfo = not showEnchantInfo
-    if showEnchantInfo then
+-- Toggle enchant text display (side indicators always stay visible)
+local function ToggleEnchantText()
+    showEnchantText = not showEnchantText
+    if showEnchantText then
         toggleButton:SetChecked(true)
-        UpdateEnchantIcons()
+        UpdateEnchantIcons() -- This will show the text labels
     else
         toggleButton:SetChecked(false)
-        HideAllEnchantUI()
+        HideAllEnchantText() -- Only hide the text, keep side indicators
     end
 end
 
@@ -665,12 +752,13 @@ local function CreateToggleButton()
     -- Tooltip
     toggleButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
-        GameTooltip:SetText("Am I Enchanted?")
-        if showEnchantInfo then
-            GameTooltip:AddLine("Click to hide enchant info", 0.8, 0.8, 0.8)
+        GameTooltip:SetText("Purple Police")
+        if showEnchantText then
+            GameTooltip:AddLine("Click to hide enchant details", 0.8, 0.8, 0.8)
         else
-            GameTooltip:AddLine("Click to show enchant info", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Click to show enchant details", 0.8, 0.8, 0.8)
         end
+        GameTooltip:AddLine("Green/Red indicators always visible", 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     
@@ -680,12 +768,16 @@ local function CreateToggleButton()
     
     -- Handle clicks
     toggleButton:SetScript("OnClick", function(self)
-        showEnchantInfo = not showEnchantInfo
-        if showEnchantInfo then
+        showEnchantText = not showEnchantText
+        -- Save to SavedVariables
+        if PurplePoliceDB then
+            PurplePoliceDB.showEnchantText = showEnchantText
+        end
+        if showEnchantText then
             UpdateEnchantIcons()
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
         else
-            HideAllEnchantUI()
+            HideAllEnchantText()
             PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_OFF)
         end
     end)
@@ -699,33 +791,38 @@ frame:RegisterEvent("UNIT_INVENTORY_CHANGED")
 
 frame:SetScript("OnEvent", function(self, event, ...)
     if event == "PLAYER_LOGIN" then
+        -- Initialize SavedVariables
+        if PurplePoliceDB == nil then
+            PurplePoliceDB = {}
+        end
+        -- Load saved setting, default to false (hidden) if not set
+        if PurplePoliceDB.showEnchantText == nil then
+            PurplePoliceDB.showEnchantText = false
+        end
+        showEnchantText = PurplePoliceDB.showEnchantText
+        
         -- Create the toggle button
         CreateToggleButton()
         
         -- Hook into the character frame
         if CharacterFrame then
             CharacterFrame:HookScript("OnShow", function()
-                if showEnchantInfo then
-                    UpdateEnchantIcons()
-                end
+                UpdateEnchantIcons() -- Always update (side indicators always show)
             end)
         end
         
         -- Also hook the PaperDollFrame if it exists
         if PaperDollFrame then
             PaperDollFrame:HookScript("OnShow", function()
-                if showEnchantInfo then
-                    UpdateEnchantIcons()
-                end
+                UpdateEnchantIcons() -- Always update (side indicators always show)
             end)
         end
         
         print("|cff00ff00Am I Enchanted?|r loaded! Open your character screen to see enchant ranks.")
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
         -- Delay slightly to ensure item data is available
-        if showEnchantInfo then
-            C_Timer.After(0.1, UpdateEnchantIcons)
-        end
+        -- Always update since side indicators are always shown
+        C_Timer.After(0.1, UpdateEnchantIcons)
     end
 end)
 
