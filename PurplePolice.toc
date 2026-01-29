@@ -6,3 +6,4 @@
 ## SavedVariables: PurplePoliceDB
 
 PurplePolice.lua
+Options.lua
