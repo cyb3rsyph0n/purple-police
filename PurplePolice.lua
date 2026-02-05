@@ -1653,11 +1653,13 @@ local function SetupItemLevelTooltip()
         local _, unit = tooltip:GetUnit()
         if not unit then return end
         
-        -- Only show for players
-        if not UnitIsPlayer(unit) then return end
+        -- Only show for players (use pcall to handle tainted values during combat)
+        local isPlayerSuccess, isPlayer = pcall(UnitIsPlayer, unit)
+        if not isPlayerSuccess or not isPlayer then return end
         
-        -- Check if we can inspect this unit
-        if not CanInspect(unit) then return end
+        -- Check if we can inspect this unit (use pcall for combat safety)
+        local canInspectSuccess, canInspect = pcall(CanInspect, unit)
+        if not canInspectSuccess or not canInspect then return end
         
         local guid = UnitGUID(unit)
         if not guid then return end
@@ -1730,7 +1732,10 @@ local function RefreshTooltipForUnit(guid)
     
     local _, unit = GameTooltip:GetUnit()
     if not unit then return end
-    if not UnitIsPlayer(unit) then return end
+    
+    -- Use pcall to handle tainted values during combat
+    local isPlayerSuccess, isPlayer = pcall(UnitIsPlayer, unit)
+    if not isPlayerSuccess or not isPlayer then return end
     
     local tooltipGuid = UnitGUID(unit)
     if tooltipGuid == guid then
