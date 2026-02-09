@@ -106,6 +106,7 @@ local function CreateEnchantSideIndicator(slotFrame, slotID)
     local indicator = CreateFrame("Frame", "AmIEnchantedSideIndicator" .. slotID, slotFrame)
     indicator:SetFrameStrata("HIGH")
     indicator:SetSize(4, slotFrame:GetHeight() - 4)
+    indicator:EnableMouse(false) -- Don't block mouse events from reaching slot
     
     -- Create the colored texture
     indicator.texture = indicator:CreateTexture(nil, "OVERLAY")
@@ -180,6 +181,7 @@ local function CreateUnenchantedBorder(slotFrame, slotID)
     border:SetSize(slotFrame:GetWidth() + 4, slotFrame:GetHeight() + 4)
     border:SetPoint("CENTER", slotFrame, "CENTER", 0, 0)
     border:SetFrameStrata("HIGH")
+    border:EnableMouse(false) -- Don't block mouse events from reaching slot
     
     -- Create red border using backdrop
     border:SetBackdrop({
@@ -337,6 +339,7 @@ end
 local function CreateSocketIndicator(parent, index)
     local indicator = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     indicator:SetSize(12, 12)
+    indicator:EnableMouse(false) -- Don't block mouse events from reaching slot
     indicator:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -463,6 +466,7 @@ local function CreateEnchantIcon(slotFrame, slotID)
     local icon = CreateFrame("Frame", "AmIEnchantedIcon" .. slotID, slotFrame)
     icon:SetSize(14, 14)
     icon:SetFrameStrata("HIGH")
+    icon:EnableMouse(false) -- Don't block mouse events from reaching slot
     
     -- Position icon in the bottom-right corner of the slot
     -- Side indicators are outside the slot, so no offset needed
@@ -961,9 +965,9 @@ local function CheckInspectSlotEnchant(slotID)
     return true, rank, true
 end
 
--- Create side indicator for inspect frame
+-- Create side indicator for inspect frame (parent to InspectFrame to avoid blocking slot events)
 local function CreateInspectSideIndicator(slotFrame, slotID)
-    local indicator = CreateFrame("Frame", "PurplePoliceInspectSideIndicator" .. slotID, slotFrame)
+    local indicator = CreateFrame("Frame", "PurplePoliceInspectSideIndicator" .. slotID, InspectFrame)
     indicator:SetFrameStrata("HIGH")
     indicator:SetSize(4, slotFrame:GetHeight() - 4)
     
@@ -972,7 +976,13 @@ local function CreateInspectSideIndicator(slotFrame, slotID)
     indicator.texture:SetColorTexture(0, 1, 0, 0.8)
     
     indicator.slotID = slotID
+    indicator.slotFrame = slotFrame -- Store reference for positioning
     indicator:Hide()
+    
+    -- Ensure mouse events pass through
+    indicator:EnableMouse(false)
+    indicator:SetHitRectInsets(1000, 1000, 1000, 1000)
+    
     return indicator
 end
 
@@ -1078,11 +1088,11 @@ local function UpdateInspectTextLabelPosition(label, slotFrame, slotID)
     end
 end
 
--- Create socket indicators for inspect frame
+-- Create socket indicators for inspect frame (parent to InspectFrame to avoid blocking slot events)
 local function CreateInspectSocketIndicators(slotFrame, slotID, maxSockets)
     local indicators = {}
     for i = 1, maxSockets do
-        local indicator = CreateFrame("Frame", nil, slotFrame, "BackdropTemplate")
+        local indicator = CreateFrame("Frame", nil, InspectFrame, "BackdropTemplate")
         indicator:SetSize(12, 12)
         indicator:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -1093,8 +1103,14 @@ local function CreateInspectSocketIndicators(slotFrame, slotID, maxSockets)
         indicator:SetBackdropBorderColor(1, 0, 0, 1)
         indicator:SetFrameStrata("HIGH")
         indicator.slotID = slotID
+        indicator.slotFrame = slotFrame -- Store reference for positioning
         indicator.index = i
         indicator:Hide()
+        
+        -- Ensure mouse events pass through
+        indicator:EnableMouse(false)
+        indicator:SetHitRectInsets(1000, 1000, 1000, 1000)
+        
         indicators[i] = indicator
     end
     return indicators
@@ -1124,9 +1140,9 @@ local function UpdateInspectSocketIndicatorPositions(indicators, slotFrame, slot
     end
 end
 
--- Create enchant icon for inspect frame
+-- Create enchant icon for inspect frame (parent to InspectFrame to avoid blocking slot events)
 local function CreateInspectEnchantIcon(slotFrame, slotID)
-    local icon = CreateFrame("Frame", "PurplePoliceInspectIcon" .. slotID, slotFrame)
+    local icon = CreateFrame("Frame", "PurplePoliceInspectIcon" .. slotID, InspectFrame)
     icon:SetSize(14, 14)
     icon:SetFrameStrata("HIGH")
     icon:SetPoint("BOTTOMRIGHT", slotFrame, "BOTTOMRIGHT", -1, 1)
@@ -1138,13 +1154,19 @@ local function CreateInspectEnchantIcon(slotFrame, slotID)
     icon.bg:SetAllPoints(icon)
     icon.bg:SetColorTexture(0, 0, 0, 0.5)
     
+    icon.slotFrame = slotFrame -- Store reference
     icon:Hide()
+    
+    -- Ensure mouse events pass through
+    icon:EnableMouse(false)
+    icon:SetHitRectInsets(1000, 1000, 1000, 1000)
+    
     return icon
 end
 
--- Create border for inspect frame
+-- Create border for inspect frame (parent to InspectFrame to avoid blocking slot events)
 local function CreateInspectBorder(slotFrame, slotID)
-    local border = CreateFrame("Frame", "PurplePoliceInspectBorder" .. slotID, slotFrame, "BackdropTemplate")
+    local border = CreateFrame("Frame", "PurplePoliceInspectBorder" .. slotID, InspectFrame, "BackdropTemplate")
     border:SetSize(slotFrame:GetWidth() + 4, slotFrame:GetHeight() + 4)
     border:SetPoint("CENTER", slotFrame, "CENTER", 0, 0)
     border:SetFrameStrata("HIGH")
@@ -1160,7 +1182,13 @@ local function CreateInspectBorder(slotFrame, slotID)
     border.glow:SetPoint("BOTTOMRIGHT", border, "BOTTOMRIGHT", 2, -2)
     border.glow:SetColorTexture(1, 0, 0, 0.15)
     
+    border.slotFrame = slotFrame -- Store reference
     border:Hide()
+    
+    -- Ensure mouse events pass through
+    border:EnableMouse(false)
+    border:SetHitRectInsets(1000, 1000, 1000, 1000)
+    
     return border
 end
 
@@ -1581,7 +1609,8 @@ local function CheckTooltipEnchantStatus(unit, slotID)
 end
 
 -- Build detailed gear info for tooltip
-local function BuildGearInfoForTooltip(unit)
+-- expectedGUID: if provided, verify the unit's GUID matches before reading gear
+local function BuildGearInfoForTooltip(unit, expectedGUID)
     local info = {
         itemLevel = 0,
         itemCount = 0,
@@ -1594,6 +1623,41 @@ local function BuildGearInfoForTooltip(unit)
     -- Validate unit exists
     if not unit or not UnitExists(unit) then
         return info
+    end
+    
+    -- Get unit level for sanity checking
+    local unitLevel = UnitLevel(unit)
+    if not unitLevel or unitLevel <= 0 then
+        unitLevel = 80 -- Assume max level if unknown
+    end
+    
+    -- Verify GUID matches if expected GUID is provided
+    -- This prevents reading gear from wrong player if unit token points elsewhere
+    if expectedGUID then
+        local actualGUID = UnitGUID(unit)
+        if actualGUID ~= expectedGUID then
+            return info -- GUID mismatch - don't read potentially wrong data
+        end
+        
+        -- Also verify we're not reading our own gear by accident
+        local playerGUID = UnitGUID("player")
+        if actualGUID == playerGUID then
+            return info -- We're accidentally reading player's own gear
+        end
+    end
+    
+    -- Calculate max expected ilvl based on unit level
+    -- This helps detect when we're reading wrong data
+    -- Current max ilvl (TWW post-squish): Mythic 8/8 = 170
+    local maxExpectedILvl
+    if unitLevel >= 80 then
+        maxExpectedILvl = 180  -- Allow some buffer above 170 max
+    elseif unitLevel >= 70 then
+        maxExpectedILvl = 150  -- Dragonflight leveling gear
+    elseif unitLevel >= 60 then
+        maxExpectedILvl = 100  -- Shadowlands leveling gear
+    else
+        maxExpectedILvl = unitLevel * 2  -- Rough estimate for lower levels
     end
     
     -- All equipment slots (excluding shirt=4 and tabard=19)
@@ -1609,12 +1673,15 @@ local function BuildGearInfoForTooltip(unit)
         if itemLink then
             local effectiveILvl = GetDetailedItemLevelInfo(itemLink)
             if effectiveILvl and effectiveILvl > 0 then
-                info.totalItemLevel = info.totalItemLevel + effectiveILvl
+                -- Cap item level at max expected (handles borrowed power items like cloaks with inflated ilvl)
+                local cappedILvl = math.min(effectiveILvl, maxExpectedILvl)
+                
+                info.totalItemLevel = info.totalItemLevel + cappedILvl
                 info.itemCount = info.itemCount + 1
                 
-                -- Track main hand ilvl for 2H weapon handling
+                -- Track main hand ilvl for 2H weapon handling (use capped value)
                 if slotID == 16 then
-                    mainHandILvl = effectiveILvl
+                    mainHandILvl = cappedILvl
                 elseif slotID == 17 then
                     hasOffHand = true
                 end
@@ -1680,6 +1747,9 @@ local function SetupItemLevelTooltip()
         if tooltip ~= GameTooltip then return end
         if not options.showItemLevelTooltip then return end
         
+        -- Disable tooltip additions when inspect frame is open to avoid conflicts
+        if InspectFrame and InspectFrame:IsShown() then return end
+        
         local _, unit = tooltip:GetUnit()
         if not unit then return end
         
@@ -1694,8 +1764,8 @@ local function SetupItemLevelTooltip()
         local guid = UnitGUID(unit)
         if not guid then return end
         
-        -- Check cache first
-        if itemLevelCache[guid] and (GetTime() - (itemLevelCache[guid].time or 0) < 30) then
+        -- Check cache first (reduced to 15 seconds to avoid stale data)
+        if itemLevelCache[guid] and (GetTime() - (itemLevelCache[guid].time or 0) < 15) then
             local cachedInfo = itemLevelCache[guid]
             if cachedInfo.itemLevel and cachedInfo.itemLevel > 0 then
                 -- Add separator
@@ -1746,6 +1816,12 @@ local function SetupItemLevelTooltip()
         if GetTime() - lastRequest > 2 then
             inspectRequestTime[guid] = GetTime()
             inspectRequestUnit[guid] = unit -- Store the unit we're inspecting
+            
+            -- Invalidate old cache entry to avoid showing stale data
+            itemLevelCache[guid] = nil
+            
+            -- Clear any stale inspect data before requesting new inspection
+            ClearInspectPlayer()
             NotifyInspect(unit)
             
             -- Show loading message
@@ -1818,10 +1894,20 @@ local function OnInspectReadyForTooltip(guid)
         return
     end
     
-    -- Build detailed gear info using the correct unit
-    local gearInfo = BuildGearInfoForTooltip(unit)
+    -- Verify GUID still matches before reading (unit token might have changed)
+    local currentGUID = UnitGUID(unit)
+    if currentGUID ~= guid then
+        inspectRequestUnit[guid] = nil
+        return
+    end
     
-    if gearInfo.itemCount > 0 then
+    -- Build detailed gear info using the correct unit, pass GUID for verification
+    local gearInfo = BuildGearInfoForTooltip(unit, guid)
+    
+    -- Only cache if we got valid data (itemCount > 0 means we actually read gear)
+    -- Also sanity check: ilvl should be below 180 (max possible post-squish is ~170)
+    -- If ilvl is higher, we likely read wrong data
+    if gearInfo.itemCount > 0 and gearInfo.itemLevel > 0 and gearInfo.itemLevel < 180 then
         itemLevelCache[guid] = {
             itemLevel = gearInfo.itemLevel,
             missingEnchants = gearInfo.missingEnchants,
@@ -1835,6 +1921,9 @@ local function OnInspectReadyForTooltip(guid)
         
         -- Refresh tooltip if it's showing this player
         RefreshTooltipForUnit(guid)
+    else
+        -- Clean up if we didn't get valid data
+        inspectRequestUnit[guid] = nil
     end
 end
 
@@ -1897,7 +1986,9 @@ frame:SetScript("OnEvent", function(self, event, ...)
                 CreateInspectToggleButton()
                 
                 InspectFrame:HookScript("OnShow", function()
-                    C_Timer.After(0.2, UpdateInspectEnchantIcons)
+                    C_Timer.After(0.2, function()
+                        UpdateInspectEnchantIcons()
+                    end)
                 end)
                 InspectFrame:HookScript("OnHide", function()
                     HideAllInspectUI()
@@ -1926,13 +2017,37 @@ frame:SetScript("OnEvent", function(self, event, ...)
         end
         
         print("|cff9932ccPurple Police|r loaded! Open your character screen to see enchant status. Click the button for options.")
+        print("|cff9932ccPurple Police|r Use /pp hide to disable overlays for testing tooltips, /pp show to re-enable")
+        
+        -- Add slash command for toggling overlays
+        SLASH_PURPLEPOLICE1 = "/pp"
+        SLASH_PURPLEPOLICE2 = "/purplepolice"
+        SlashCmdList["PURPLEPOLICE"] = function(msg)
+            local cmd = msg:lower():trim()
+            if cmd == "hide" then
+                -- Hide all inspect overlays to test if they're blocking tooltips
+                HideAllInspectUI()
+                print("|cff9932ccPurple Police|r Inspect overlays hidden. Tooltips should work now if overlays were the issue.")
+            elseif cmd == "show" then
+                -- Re-show overlays
+                if InspectFrame and InspectFrame:IsShown() then
+                    UpdateInspectEnchantIcons()
+                end
+                print("|cff9932ccPurple Police|r Inspect overlays re-enabled.")
+            else
+                print("|cff9932ccPurple Police|r Commands: /pp hide, /pp show")
+            end
+        end
+        
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "UNIT_INVENTORY_CHANGED" then
         -- Delay slightly to ensure item data is available
         -- Always update since side indicators are always shown
         C_Timer.After(0.1, UpdateEnchantIcons)
     elseif event == "INSPECT_READY" then
         -- Update inspect frame when inspection data is ready
-        C_Timer.After(0.1, UpdateInspectEnchantIcons)
+        C_Timer.After(0.1, function()
+            UpdateInspectEnchantIcons()
+        end)
         -- Also update item level cache for tooltip
         local guid = ...
         OnInspectReadyForTooltip(guid)
