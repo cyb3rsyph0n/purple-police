@@ -1458,6 +1458,7 @@ end
 -- Cache for item level lookups
 local itemLevelCache = {}
 local inspectRequestTime = {}
+local inspectRequestUnit = {} -- Track which unit was inspected by GUID
 
 -- Slot names for display
 local SLOT_NAMES = {
@@ -1590,16 +1591,33 @@ local function BuildGearInfoForTooltip(unit)
         lowRankEnchants = {},
     }
     
+    -- Validate unit exists
+    if not unit or not UnitExists(unit) then
+        return info
+    end
+    
     -- All equipment slots (excluding shirt=4 and tabard=19)
+    -- WoW always calculates average ilvl using 16 slots
     local equipSlots = {1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17}
+    local TOTAL_GEAR_SLOTS = 16
+    
+    local mainHandILvl = nil
+    local hasOffHand = false
     
     for _, slotID in ipairs(equipSlots) do
         local itemLink = GetInventoryItemLink(unit, slotID)
         if itemLink then
             local effectiveILvl = GetDetailedItemLevelInfo(itemLink)
-            if effectiveILvl then
+            if effectiveILvl and effectiveILvl > 0 then
                 info.totalItemLevel = info.totalItemLevel + effectiveILvl
                 info.itemCount = info.itemCount + 1
+                
+                -- Track main hand ilvl for 2H weapon handling
+                if slotID == 16 then
+                    mainHandILvl = effectiveILvl
+                elseif slotID == 17 then
+                    hasOffHand = true
+                end
             end
             
             -- Check enchant status for enchantable slots
@@ -1636,8 +1654,20 @@ local function BuildGearInfoForTooltip(unit)
         end
     end
     
-    if info.itemCount > 0 then
-        info.itemLevel = math.floor(info.totalItemLevel / info.itemCount)
+    -- Handle 2H weapons: if main hand exists but no off-hand, count main hand twice
+    -- This matches how WoW calculates average ilvl
+    if mainHandILvl and not hasOffHand then
+        info.totalItemLevel = info.totalItemLevel + mainHandILvl
+        info.itemCount = info.itemCount + 1
+    end
+    
+    -- Always divide by 16 slots (WoW's standard calculation)
+    -- Only calculate if we have a reasonable amount of gear data
+    if info.itemCount >= 10 then
+        info.itemLevel = math.floor(info.totalItemLevel / TOTAL_GEAR_SLOTS)
+    elseif info.itemCount > 0 then
+        -- Partial data - still calculate but may be inaccurate
+        info.itemLevel = math.floor(info.totalItemLevel / TOTAL_GEAR_SLOTS)
     end
     
     return info
@@ -1715,6 +1745,7 @@ local function SetupItemLevelTooltip()
         local lastRequest = inspectRequestTime[guid] or 0
         if GetTime() - lastRequest > 2 then
             inspectRequestTime[guid] = GetTime()
+            inspectRequestUnit[guid] = unit -- Store the unit we're inspecting
             NotifyInspect(unit)
             
             -- Show loading message
@@ -1744,12 +1775,51 @@ local function RefreshTooltipForUnit(guid)
     end
 end
 
+-- Find a unit token that matches the given GUID
+local function FindUnitByGUID(guid)
+    -- Check common unit tokens
+    local unitsToCheck = {"target", "mouseover", "focus", "party1", "party2", "party3", "party4", "raid1"}
+    
+    -- Also check the stored unit from the inspect request
+    local storedUnit = inspectRequestUnit[guid]
+    if storedUnit then
+        local storedGUID = UnitGUID(storedUnit)
+        if storedGUID == guid then
+            return storedUnit
+        end
+    end
+    
+    for _, unitToken in ipairs(unitsToCheck) do
+        if UnitGUID(unitToken) == guid then
+            return unitToken
+        end
+    end
+    
+    -- Check more raid members if in a raid
+    for i = 1, 40 do
+        local raidUnit = "raid" .. i
+        if UnitGUID(raidUnit) == guid then
+            return raidUnit
+        end
+    end
+    
+    return nil
+end
+
 -- Handle INSPECT_READY to cache gear info
 local function OnInspectReadyForTooltip(guid)
     if not guid then return end
     
-    -- Build detailed gear info
-    local gearInfo = BuildGearInfoForTooltip("target")
+    -- Find the actual unit that was inspected
+    local unit = FindUnitByGUID(guid)
+    if not unit then
+        -- Clean up stored unit reference
+        inspectRequestUnit[guid] = nil
+        return
+    end
+    
+    -- Build detailed gear info using the correct unit
+    local gearInfo = BuildGearInfoForTooltip(unit)
     
     if gearInfo.itemCount > 0 then
         itemLevelCache[guid] = {
@@ -1759,6 +1829,9 @@ local function OnInspectReadyForTooltip(guid)
             missingSockets = gearInfo.missingSockets,
             time = GetTime()
         }
+        
+        -- Clean up stored unit reference
+        inspectRequestUnit[guid] = nil
         
         -- Refresh tooltip if it's showing this player
         RefreshTooltipForUnit(guid)
